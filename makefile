@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -O1 -Iinclude
+CFLAGS = -Wall -O1 -Iheaders
 LDFLAGS = -lm
 
 SRC = $(wildcard src/**/*.c) $(wildcard src/*.c)

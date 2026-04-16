@@ -16,7 +16,7 @@ LidarData* load_lidar_data(const char* filename)
     rewind(file);
     int num_points = file_size / (4 * sizeof(float)); // Each point has 4 floats (x, y, z, intensity)
 
-    LidarData *points = malloc(num_points * sizeof(Point));
+    Point *points = malloc(num_points * sizeof(Point));
 
     if (!points) {
         perror("Memory allocation failed");
@@ -24,7 +24,7 @@ LidarData* load_lidar_data(const char* filename)
         return NULL;
     }
 
-    size_t read = fread(points, sizeof(LidarData), num_points, file);
+    size_t read = fread(points, sizeof(Point), num_points, file);
     if (read != num_points) {
         perror("Failed to read all data");
         free(points);
