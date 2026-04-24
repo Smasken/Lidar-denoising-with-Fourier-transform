@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "../headers/lidar.h"
 #include "../headers/image.h"
+#include "../headers/diffusion.h"
 
 int main()
 {
@@ -29,6 +30,8 @@ int main()
         printf("Created range image: %d x %d\n", range_img->width, range_img->height);
 
         fill_holes(range_img, 5); // fill empty pixels using neighbor averaging
+        //median_filter(range_img); 
+        apply_diffusion(range_img, 10, 0.1f);
 
         // Save as PGM
         if (save_image_as_pgm(range_img, "range_image.pgm")) {

@@ -191,3 +191,53 @@ void fill_holes(Image* img, int iterations)
 
     free(temp);
 }
+
+static int compare_float(const void* a, const void* b) {
+    float fa = *(const float*)a;
+    float fb = *(const float*)b;
+    return (fa > fb) - (fa < fb);
+}
+
+void median_filter(Image* img)
+{
+    int w = img->width;
+    int h = img->height;
+
+    float* temp = malloc(sizeof(float) * w * h);
+    if (!temp) return;
+
+    memcpy(temp, img->data, sizeof(float) * w * h);
+
+    for (int y = 1; y < h - 1; y++) {
+        for (int x = 1; x < w - 1; x++) {
+
+            float window[9];
+            int count = 0;
+
+            // Collect valid neighbors
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    float val = img->data[(y + dy) * w + (x + dx)];
+                    if (val >= 0.0f) {
+                        window[count++] = val;
+                    }
+                }
+            }
+
+            // If no valid neighbors → keep original
+            if (count == 0)
+                continue;
+
+            // Sort valid values
+            qsort(window, count, sizeof(float), compare_float);
+
+            // Take median
+            float median = window[count / 2];
+
+            temp[y * w + x] = median;
+        }
+    }
+
+    memcpy(img->data, temp, sizeof(float) * w * h);
+    free(temp);
+}

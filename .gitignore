@@ -1,1 +1,5 @@
+# Ignore data files
 data/
+
+# Ignore object files
+src/*.o
