@@ -6,3 +6,6 @@ data/
 
 # Ignore random images
 *.pgm
+
+# Ignore executables
+denoise
