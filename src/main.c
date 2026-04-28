@@ -15,16 +15,6 @@ int main()
 
     printf("loaded %d points\n", scan->num_points);
 
-    /*
-    for (int i = 0; i < 5; i++) {
-        printf("Point %d: %.2f %.2f %.2f %.2f\n",
-            i,
-            scan->points[i].x,
-            scan->points[i].y,
-            scan->points[i].z,
-            scan->points[i].intensity);
-    }*/
-
     // Convert to range image
     Image* range_img = lidar_to_range_image(scan, 1024, 64);
     if (range_img) {
@@ -35,7 +25,16 @@ int main()
         //apply_diffusion(range_img, 10, 0.1f);
 
         save_image_as_pgm(range_img, "before_fft.pgm");
-        fft_pipeline(range_img);
+
+        /*
+        fft_pipeline function applies transform, filters, and inverse transform. 
+        Select filter and parameter (sigma, as a float). 
+        Filter choices: 
+        FILTER_NONE, FILTER_GAUSSIAN
+        */
+        
+        fft_pipeline(range_img, FILTER_GAUSSIAN, 30.0f);
+
         save_image_as_pgm(range_img, "after_fft.pgm");
 
         free_image(range_img);

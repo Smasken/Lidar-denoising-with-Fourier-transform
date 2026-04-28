@@ -3,6 +3,7 @@
 #include <complex.h>
 
 #include "image.h"
+#include "filters.h"
 
 /* =======================
    Bit reversal
@@ -127,7 +128,29 @@ void ifft2d(float complex* data, int width, int height)
     free(column);
 }
 
-void fft_pipeline(Image* img)
+static void fft_shift(complex float* data, int width, int height)
+{
+    for (int y = 0; y < height / 2; y++) {
+        for (int x = 0; x < width / 2; x++) {
+
+            int i1 = y * width + x;
+            int i2 = (y + height/2) * width + (x + width/2);
+
+            complex float tmp = data[i1];
+            data[i1] = data[i2];
+            data[i2] = tmp;
+
+            int i3 = y * width + (x + width/2);
+            int i4 = (y + height/2) * width + x;
+
+            tmp = data[i3];
+            data[i3] = data[i4];
+            data[i4] = tmp;
+        }
+    }
+}
+
+void fft_pipeline(Image* img, FilterType filter, float filter_param)
 {
     int w = img->width;
     int h = img->height;
@@ -136,7 +159,7 @@ void fft_pipeline(Image* img)
     float complex* data = malloc(sizeof(float complex) * size);
     if (!data) return;
 
-    // Copy image to complex form
+    // Copy image → complex
     for (int i = 0; i < size; i++) {
         data[i] = img->data[i];
     }
@@ -144,10 +167,19 @@ void fft_pipeline(Image* img)
     // Forward FFT
     fft2d(data, w, h);
 
+    // Shift (center frequencies)
+    fft_shift(data, w, h);
+
+    // Apply chosen filter
+    apply_filter(data, w, h, filter, filter_param);
+
+    // Shift back
+    fft_shift(data, w, h);
+
     // Inverse FFT
     ifft2d(data, w, h);
 
-    // Copy back (real part)
+    // Copy back
     for (int i = 0; i < size; i++) {
         img->data[i] = crealf(data[i]);
     }
