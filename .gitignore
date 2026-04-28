@@ -2,4 +2,7 @@
 data/
 
 # Ignore object files
-src/*.o
+*.o
+
+# Ignore random images
+*.pgm

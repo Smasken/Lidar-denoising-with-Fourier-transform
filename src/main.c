@@ -1,7 +1,8 @@
 #include <stdio.h>
-#include "../headers/lidar.h"
-#include "../headers/image.h"
-#include "../headers/diffusion.h"
+#include "lidar.h"
+#include "image.h"
+#include "diffusion.h"
+#include "fft.h"
 
 int main()
 {
@@ -31,14 +32,12 @@ int main()
 
         fill_holes(range_img, 5); // fill empty pixels using neighbor averaging
         //median_filter(range_img); 
-        apply_diffusion(range_img, 10, 0.1f);
+        //apply_diffusion(range_img, 10, 0.1f);
 
-        // Save as PGM
-        if (save_image_as_pgm(range_img, "range_image.pgm")) {
-            printf("Saved range image to range_image.pgm\n");
-        } else {
-            printf("Failed to save range image\n");
-        }
+        save_image_as_pgm(range_img, "before_fft.pgm");
+        fft_pipeline(range_img);
+        save_image_as_pgm(range_img, "after_fft.pgm");
+
         free_image(range_img);
     }
 

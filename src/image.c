@@ -3,8 +3,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <float.h>
-#include "../headers/image.h"
-#include "../headers/lidar.h"
+#include "image.h"
+#include "lidar.h"
 
 Image* create_image(int width, int height) {
     Image* img = malloc(sizeof(Image));
