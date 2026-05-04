@@ -1,8 +1,11 @@
 #include <stdio.h>
+#include <time.h>
 #include "lidar.h"
 #include "image.h"
 #include "diffusion.h"
 #include "fft.h"
+#include "metrics.h"
+#include "noise.h"
 
 int main()
 {
@@ -33,13 +36,65 @@ int main()
         FILTER_NONE, FILTER_GAUSSIAN
         */
         
-        fft_pipeline(range_img, FILTER_GAUSSIAN, 30.0f);
+        // Create clean reference
+    Image* original = copy_image(range_img);
 
-        save_image_as_pgm(range_img, "after_fft.pgm");
+    // Create noisy version
+    Image* noisy = copy_image(range_img);
+    gaussian_noise(noisy, 0.5f);
+    save_image_as_pgm(noisy, "noisy.pgm");
 
-        free_image(range_img);
-    }
+    // Create copies for each method
+    Image* img_diff = copy_image(noisy);
+    Image* img_fft  = copy_image(noisy);
+
+    printf("\n--- Running experiment ---\n");
+
+    // ====================
+    // Diffusion
+    // ====================
+    clock_t start = clock();
+
+    apply_diffusion(img_diff, 20, 0.1f);
+
+    clock_t end = clock();
+    float time_diff = 1000.0f * (end - start) / CLOCKS_PER_SEC;
+
+    float mse_diff  = compute_mse(original, img_diff);
+    float psnr_diff = compute_psnr(original, img_diff);
+
+    // ====================
+    // FFT
+    // ====================
+    start = clock();
+
+    fft_pipeline(img_fft, FILTER_GAUSSIAN, 30.0f);
+
+    end = clock();
+    float time_fft = 1000.0f * (end - start) / CLOCKS_PER_SEC;
+
+    float mse_fft  = compute_mse(original, img_fft);
+    float psnr_fft = compute_psnr(original, img_fft);
+
+    // ====================
+    // Print results
+    // ====================
+    printf("\nMethod        MSE        PSNR       Time(ms)\n");
+    printf("------------------------------------------------\n");
+    printf("Diffusion   %8.4f   %8.2f   %8.2f\n", mse_diff, psnr_diff, time_diff);
+    printf("FFT         %8.4f   %8.2f   %8.2f\n", mse_fft, psnr_fft, time_fft);
+
+    // Optional: save outputs
+    save_image_as_pgm(img_diff, "diffusion.pgm");
+    save_image_as_pgm(img_fft,  "fft.pgm");
+
+    // Cleanup
+    free_image(original);
+    free_image(noisy);
+    free_image(img_diff);
+    free_image(img_fft);
 
     free_lidar_data(scan);
     return 0;
+    }
 }

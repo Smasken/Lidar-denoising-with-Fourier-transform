@@ -241,3 +241,14 @@ void median_filter(Image* img)
     memcpy(img->data, temp, sizeof(float) * w * h);
     free(temp);
 }
+
+Image* copy_image(Image* img)
+{
+    Image* copy = create_image(img->width, img->height);
+    if (!copy) return NULL;
+
+    memcpy(copy->data, img->data,
+           sizeof(float) * img->width * img->height);
+
+    return copy;
+}
