@@ -74,6 +74,11 @@ Image* lidar_to_range_image(LidarData* lidar, int width, int height) {
             }
         }
 
+        // Flip vertical mapping so that the top row corresponds to the highest elevation.
+        // The beam array was built from MIN_ELEV..MAX_ELEV, so y==0 is MIN_ELEV (lowest).
+        // Display images treat row 0 as the top; invert to make top = MAX_ELEV.
+        y = height - 1 - y;
+
         // Take the minimum range for each bin
         int idx = y * width + x;
         if (img->data[idx] < 0.0f || range < img->data[idx]) {
@@ -90,7 +95,7 @@ int save_image_as_pgm(Image* img, const char* filename) {
     FILE* file = fopen(filename, "wb");
     if (!file) return 0;
 
-    /* Find min and max range for normalization (alternative instead of fixed values)
+    //Find min and max range for normalization (alternative instead of fixed values)
     float min_range = FLT_MAX;
     float max_range = -FLT_MAX;
     for (int i = 0; i < img->width * img->height; i++) {
@@ -100,16 +105,10 @@ int save_image_as_pgm(Image* img, const char* filename) {
             if (val > max_range) max_range = val;
         }
     }
+
+    /*float min_range = 1.0f;
+    float max_range = 80.0f;*/
     
-
-    if (max_range <= min_range) {
-        // All same or no data
-        max_range = min_range + 1.0f;
-    }
-    */
-
-    float min_range = 1.0f;
-    float max_range = 80.0f;
     float range_span = max_range - min_range;
 
     // Write PGM header

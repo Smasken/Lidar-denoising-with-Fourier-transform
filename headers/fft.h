@@ -11,6 +11,6 @@ void ifft1d(float complex* data, int n);
 void fft2d(float complex* data, int width, int height);
 void ifft2d(float complex* data, int width, int height);
 
-void fft_pipeline(Image* img, FilterType filter, float param);
+void apply_fft(Image* img, FilterType filter, float filter_param);
 
 #endif

@@ -1,4 +1,4 @@
-# Ignore data files
+# Ignore data
 data/
 
 # Ignore object files
@@ -9,3 +9,5 @@ data/
 
 # Ignore executables
 denoise
+
+*.mp4

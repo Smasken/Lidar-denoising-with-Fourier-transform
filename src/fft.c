@@ -150,7 +150,14 @@ static void fft_shift(complex float* data, int width, int height)
     }
 }
 
-void fft_pipeline(Image* img, FilterType filter, float filter_param)
+/*
+        apply_fft function applies transform, filters, and inverse transform. 
+        Select filter and parameter (sigma, as a float). 
+        Filter choices: 
+        FILTER_NONE, FILTER_GAUSSIAN
+        */
+
+void apply_fft(Image* img, FilterType filter, float filter_param)
 {
     int w = img->width;
     int h = img->height;
