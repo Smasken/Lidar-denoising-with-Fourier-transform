@@ -122,10 +122,12 @@ int main(int argc, char** argv)
     struct stat st;
     if (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) {
         const char* input_dir = argv[1];
-        const char* out_dir = (argc > 2) ? argv[2] : "data/output_images";
+        const char* images_out_dir = "output_images";
+        const char* videos_out_dir = "output_videos";
 
         // Parse optional last-three y/n flags (range, normals, discontinuities).
         int create_range_video = 0, create_normals_video = 0, create_disc_video = 0;
+        int flags_present = 0;
         if (argc >= 4) {
             int flags_start = argc - 3; // index of first possible flag
             if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1) {
@@ -136,17 +138,26 @@ int main(int argc, char** argv)
                     create_range_video = (a == 'y');
                     create_normals_video = (b == 'y');
                     create_disc_video = (c == 'y');
-                    if (flags_start > 2) {
-                        out_dir = argv[2];
-                    } else {
-                        out_dir = "data/output_images";
-                    }
+                    flags_present = 1;
+                    // If user provided images and/or videos dirs before flags, read them
+                    if (flags_start > 2) images_out_dir = argv[2];
+                    if (flags_start > 3) videos_out_dir = argv[3];
                 }
             }
         }
 
-        if (!ensure_dir(out_dir)) {
-            fprintf(stderr, "Failed to create output directory %s\n", out_dir);
+        // If no flags present, allow optional argv[2]=images dir and argv[3]=videos dir
+        if (!flags_present) {
+            if (argc > 2) images_out_dir = argv[2];
+            if (argc > 3) videos_out_dir = argv[3];
+        }
+
+        if (!ensure_dir(images_out_dir)) {
+            fprintf(stderr, "Failed to create images output directory %s\n", images_out_dir);
+            return 1;
+        }
+        if (!ensure_dir(videos_out_dir)) {
+            fprintf(stderr, "Failed to create videos output directory %s\n", videos_out_dir);
             return 1;
         }
 
@@ -192,7 +203,7 @@ int main(int argc, char** argv)
             char fullpath[2048];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", input_dir, names[i]);
             printf("Processing %s (%zu/%zu)\n", names[i], i+1, names_len);
-            process_and_save(fullpath, idx, out_dir);
+            process_and_save(fullpath, idx, images_out_dir);
             idx++;
             free(names[i]);
         }
@@ -202,27 +213,27 @@ int main(int argc, char** argv)
 
         char cmd[2048];
         if (create_range_video) {
-            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4", out_dir, out_dir);
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4", images_out_dir, videos_out_dir);
             printf("Creating range video: %s\n", cmd);
             system(cmd);
         } else {
-            printf("To create range video run:\nffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4\n", out_dir, out_dir);
+            printf("To create range video run:\nffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4\n", images_out_dir, videos_out_dir);
         }
 
         if (create_normals_video) {
-            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4", out_dir, out_dir);
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4", images_out_dir, videos_out_dir);
             printf("Creating normals video: %s\n", cmd);
             system(cmd);
         } else {
-            printf("To create normals video run:\nffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4\n", out_dir, out_dir);
+            printf("To create normals video run:\nffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4\n", images_out_dir, videos_out_dir);
         }
 
         if (create_disc_video) {
-            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4", out_dir, out_dir);
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4", images_out_dir, videos_out_dir);
             printf("Creating discontinuity video: %s\n", cmd);
             system(cmd);
         } else {
-            printf("To create discontinuity video run:\nffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4\n", out_dir, out_dir);
+            printf("To create discontinuity video run:\nffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4\n", images_out_dir, videos_out_dir);
         }
 
         return 0;
