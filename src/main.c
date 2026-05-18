@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include "lidar.h"
 #include "image.h"
@@ -42,12 +43,12 @@ static void process_and_save(const char* infile, int idx, const char* outdir)
 
     fill_holes(range_img, 5);
     median_filter(range_img);
-
     char path[1024];
     snprintf(path, sizeof(path), "%s/range_%05d.pgm", outdir, idx);
     save_image_as_pgm(range_img, path);
-
+    
     Normal* normals = compute_surface_normals(range_img);
+
     if (normals) {
         snprintf(path, sizeof(path), "%s/normals_%05d.pgm", outdir, idx);
         save_normal_map_as_pgm(normals, range_img->width, range_img->height, path);
@@ -87,8 +88,6 @@ static int run_single_experiment(const char* infile)
     fill_holes(range_img, 5);
     median_filter(range_img);
     save_image_as_pgm(range_img, "range_img.pgm");
-
-
     printf("\n--- Running experiment ---\n");
 
     // Also save normals and discontinuity for this scan
@@ -123,7 +122,28 @@ int main(int argc, char** argv)
     struct stat st;
     if (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) {
         const char* input_dir = argv[1];
-        const char* out_dir = (argc > 2) ? argv[2] : "output_frames";
+        const char* out_dir = (argc > 2) ? argv[2] : "data/output_images";
+
+        // Parse optional last-three y/n flags (range, normals, discontinuities).
+        int create_range_video = 0, create_normals_video = 0, create_disc_video = 0;
+        if (argc >= 4) {
+            int flags_start = argc - 3; // index of first possible flag
+            if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1) {
+                char a = tolower((unsigned char)argv[flags_start][0]);
+                char b = tolower((unsigned char)argv[flags_start+1][0]);
+                char c = tolower((unsigned char)argv[flags_start+2][0]);
+                if ((a == 'y' || a == 'n') && (b == 'y' || b == 'n') && (c == 'y' || c == 'n')) {
+                    create_range_video = (a == 'y');
+                    create_normals_video = (b == 'y');
+                    create_disc_video = (c == 'y');
+                    if (flags_start > 2) {
+                        out_dir = argv[2];
+                    } else {
+                        out_dir = "data/output_images";
+                    }
+                }
+            }
+        }
 
         if (!ensure_dir(out_dir)) {
             fprintf(stderr, "Failed to create output directory %s\n", out_dir);
@@ -178,8 +198,32 @@ int main(int argc, char** argv)
         }
         free(names);
 
-        printf("Batch processing complete. To assemble a video run:\n");
-        printf("ffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p range_video.mp4\n", out_dir);
+        printf("Batch processing complete.\n");
+
+        char cmd[2048];
+        if (create_range_video) {
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4", out_dir, out_dir);
+            printf("Creating range video: %s\n", cmd);
+            system(cmd);
+        } else {
+            printf("To create range video run:\nffmpeg -y -framerate 10 -i %s/range_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/range_video.mp4\n", out_dir, out_dir);
+        }
+
+        if (create_normals_video) {
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4", out_dir, out_dir);
+            printf("Creating normals video: %s\n", cmd);
+            system(cmd);
+        } else {
+            printf("To create normals video run:\nffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4\n", out_dir, out_dir);
+        }
+
+        if (create_disc_video) {
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4", out_dir, out_dir);
+            printf("Creating discontinuity video: %s\n", cmd);
+            system(cmd);
+        } else {
+            printf("To create discontinuity video run:\nffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4\n", out_dir, out_dir);
+        }
 
         return 0;
     }
