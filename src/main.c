@@ -15,6 +15,7 @@
 #include "noise.h"
 #include "normals.h"
 #include "discontinuity.h"
+#include "segmentation.h"
 
 // Ensure a directory exists (create if missing)
 static int ensure_dir(const char* path)
@@ -52,6 +53,10 @@ static void process_and_save(const char* infile, int idx, const char* outdir)
     if (normals) {
         snprintf(path, sizeof(path), "%s/normals_%05d.pgm", outdir, idx);
         save_normal_map_as_pgm(normals, range_img->width, range_img->height, path);
+        char segpath[1024];
+        snprintf(segpath, sizeof(segpath), "%s/ground_%05d.ppm", outdir, idx);
+        // default nz threshold ~0.9 (≈25° from vertical)
+        save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f);
         free(normals);
     }
 
@@ -125,11 +130,32 @@ int main(int argc, char** argv)
         const char* images_out_dir = "output_images";
         const char* videos_out_dir = "output_videos";
 
-        // Parse optional last-three y/n flags (range, normals, discontinuities).
-        int create_range_video = 0, create_normals_video = 0, create_disc_video = 0;
+        // Parse optional flags: support either last-4 flags (r n d g) or last-3 (r n d)
+        int create_range_video = 0, create_normals_video = 0, create_disc_video = 0, create_ground_video = 0;
         int flags_present = 0;
-        if (argc >= 4) {
-            int flags_start = argc - 3; // index of first possible flag
+
+        if (argc >= 5) {
+            int flags_start = argc - 4; // index of first possible flag (4 flags)
+            if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1 && (int)strlen(argv[flags_start+3]) == 1) {
+                char a = tolower((unsigned char)argv[flags_start][0]);
+                char b = tolower((unsigned char)argv[flags_start+1][0]);
+                char c = tolower((unsigned char)argv[flags_start+2][0]);
+                char d = tolower((unsigned char)argv[flags_start+3][0]);
+                if ((a == 'y' || a == 'n') && (b == 'y' || b == 'n') && (c == 'y' || c == 'n') && (d == 'y' || d == 'n')) {
+                    create_range_video = (a == 'y');
+                    create_normals_video = (b == 'y');
+                    create_disc_video = (c == 'y');
+                    create_ground_video = (d == 'y');
+                    flags_present = 1;
+                    if (flags_start > 2) images_out_dir = argv[2];
+                    if (flags_start > 3) videos_out_dir = argv[3];
+                }
+            }
+        }
+
+        // Fallback: check for 3-flag form (no ground flag)
+        if (!flags_present && argc >= 4) {
+            int flags_start = argc - 3; // index of first possible flag (3 flags)
             if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1) {
                 char a = tolower((unsigned char)argv[flags_start][0]);
                 char b = tolower((unsigned char)argv[flags_start+1][0]);
@@ -138,8 +164,8 @@ int main(int argc, char** argv)
                     create_range_video = (a == 'y');
                     create_normals_video = (b == 'y');
                     create_disc_video = (c == 'y');
+                    create_ground_video = 0;
                     flags_present = 1;
-                    // If user provided images and/or videos dirs before flags, read them
                     if (flags_start > 2) images_out_dir = argv[2];
                     if (flags_start > 3) videos_out_dir = argv[3];
                 }
@@ -204,6 +230,9 @@ int main(int argc, char** argv)
             snprintf(fullpath, sizeof(fullpath), "%s/%s", input_dir, names[i]);
             printf("Processing %s (%zu/%zu)\n", names[i], i+1, names_len);
             process_and_save(fullpath, idx, images_out_dir);
+            // also create segmentation frame (ground overlay)
+            // process_and_save already computes normals and frees them; reopen quick compute here
+            // To avoid duplicate computation, modify process_and_save to save segmentation as well.
             idx++;
             free(names[i]);
         }
@@ -234,6 +263,15 @@ int main(int argc, char** argv)
             system(cmd);
         } else {
             printf("To create discontinuity video run:\nffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4\n", images_out_dir, videos_out_dir);
+        }
+
+        // Ground segmentation video
+        if (create_ground_video) {
+            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/ground_%%05d.ppm -c:v libx264 -pix_fmt yuv420p %s/ground_video.mp4", images_out_dir, videos_out_dir);
+            printf("Creating ground segmentation video: %s\n", cmd);
+            system(cmd);
+        } else {
+            printf("To create ground segmentation video run:\nffmpeg -y -framerate 10 -i %s/ground_%%05d.ppm -c:v libx264 -pix_fmt yuv420p %s/ground_video.mp4\n", images_out_dir, videos_out_dir);
         }
 
         return 0;

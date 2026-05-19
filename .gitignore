@@ -4,8 +4,9 @@ data/
 # Ignore object files
 *.o
 
-# Ignore random images
+# Ignore images
 *.pgm
+*.ppm
 
 # Ignore executables
 denoise
