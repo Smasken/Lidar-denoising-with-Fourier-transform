@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include "../headers/normals.h"
 
+// Based on Schreck and Reichert: Height Change Feature Based Free Space Detection (2023)
+
 // Assumed elevation range used in lidar_to_range_image
 static const float MIN_ELEV = -24.9f;
 static const float MAX_ELEV = 2.0f;
