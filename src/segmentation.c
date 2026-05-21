@@ -64,16 +64,26 @@ int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int
             rgb[1] = 165;
             rgb[2] = 0;
         } else {
-            float val = range_img->data[i];
             unsigned char pix = 0;
-            if (val < 0.0f) {
-                pix = 0;
+            // Prefer normals-based visualization (Z component -> brightness)
+            if (normals && normals[i].valid) {
+                float v = normals[i].nz;
+                float val = (v * 0.5f) + 0.5f; // map [-1,1] -> [0,1]
+                if (val < 0.0f) val = 0.0f;
+                if (val > 1.0f) val = 1.0f;
+                pix = (unsigned char)(val * 255.0f);
             } else {
-                float norm = (val - min_range) / range_span;
-                norm = 1.0f - norm;
-                if (norm < 0.0f) norm = 0.0f;
-                if (norm > 1.0f) norm = 1.0f;
-                pix = (unsigned char)(norm * 255.0f);
+                // fallback to range-based grayscale
+                float valr = range_img->data[i];
+                if (valr < 0.0f) {
+                    pix = 0;
+                } else {
+                    float norm = (valr - min_range) / range_span;
+                    norm = 1.0f - norm;
+                    if (norm < 0.0f) norm = 0.0f;
+                    if (norm > 1.0f) norm = 1.0f;
+                    pix = (unsigned char)(norm * 255.0f);
+                }
             }
             rgb[0] = pix; rgb[1] = pix; rgb[2] = pix;
         }
