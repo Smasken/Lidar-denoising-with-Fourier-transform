@@ -27,8 +27,9 @@ static int ensure_dir(const char* path)
     return 1;
 }
 
-// Process a single .bin input and save range, normals, and discontinuity images
-static void process_and_save(const char* infile, int idx, const char* outdir)
+// Process a single .bin input and save range, normals, discontinuity images
+// If h_threshold >= 0, also save a ground segmentation overlay using that height threshold.
+static void process_and_save(const char* infile, int idx, const char* outdir, float h_threshold)
 {
     LidarData* scan = load_lidar_data(infile);
     if (!scan) {
@@ -53,10 +54,12 @@ static void process_and_save(const char* infile, int idx, const char* outdir)
     if (normals) {
         snprintf(path, sizeof(path), "%s/normals_%05d.pgm", outdir, idx);
         save_normal_map_as_pgm(normals, range_img->width, range_img->height, path);
-        char segpath[1024];
-        snprintf(segpath, sizeof(segpath), "%s/ground_%05d.ppm", outdir, idx);
-        // default nz threshold ~0.9 (≈25° from vertical)
-        save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f);
+        if (h_threshold >= 0.0f) {
+            char segpath[1024];
+            snprintf(segpath, sizeof(segpath), "%s/ground_%05d.ppm", outdir, idx);
+            // default nz threshold ~0.9 (≈25° from vertical), use provided h_threshold
+            save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f, h_threshold);
+        }
         free(normals);
     }
 
@@ -229,7 +232,8 @@ int main(int argc, char** argv)
             char fullpath[2048];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", input_dir, names[i]);
             printf("Processing %s (%zu/%zu)\n", names[i], i+1, names_len);
-            process_and_save(fullpath, idx, images_out_dir);
+            float h_threshold = create_ground_video ? 0.5f : -1.0f; // 0.5 m default when enabled
+            process_and_save(fullpath, idx, images_out_dir, h_threshold);
             // also create segmentation frame (ground overlay)
             // process_and_save already computes normals and frees them; reopen quick compute here
             // To avoid duplicate computation, modify process_and_save to save segmentation as well.

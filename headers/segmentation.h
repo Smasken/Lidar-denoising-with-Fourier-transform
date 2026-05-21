@@ -7,6 +7,8 @@
 // Save an RGB overlay image where ground pixels (normals pointing up)
 // are colored orange and other pixels retain the grayscale range visualization.
 // Writes a binary PPM (P6). Returns 1 on success.
-int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold);
+// `nz_threshold` : minimum Z component of normal to be considered upward-facing
+// `h_threshold`  : maximum allowed height (pz) to be considered ground (meters)
+int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold, float h_threshold);
 
 #endif

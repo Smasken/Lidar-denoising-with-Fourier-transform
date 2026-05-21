@@ -1,9 +1,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
+#include <math.h>
 #include "../headers/segmentation.h"
 
-int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold)
+// Recreate point z from range image pixel coordinates.
+// Uses the same elevation mapping as `normals.c`.
+static int reconstruct_pz(int x, int y, int width, int height, float range, float* out_pz)
+{
+    if (range <= 0.0f) return 0;
+    const float MIN_ELEV = -24.9f;
+    const float MAX_ELEV = 2.0f;
+    float step = (MAX_ELEV - MIN_ELEV) / (float)(height - 1);
+    float elevation_deg = MIN_ELEV + (float)y * step;
+    float elevation = elevation_deg * (float)M_PI / 180.0f;
+    *out_pz = range * sinf(elevation);
+    return 1;
+}
+
+int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold, float h_threshold)
 {
     if (!range_img || !filename) return 0;
 
@@ -30,7 +45,18 @@ int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int
 
         int is_ground = 0;
         if (normals && normals[i].valid) {
-            if (normals[i].nz >= nz_threshold) is_ground = 1;
+            if (normals[i].nz >= nz_threshold) {
+                // also enforce absolute height threshold
+                int x = i % width;
+                int y = i / width;
+                float range = range_img->data[i];
+                float pz = 0.0f;
+                if (reconstruct_pz(x, y, width, height, range, &pz)) {
+                    if (pz <= h_threshold) {
+                        is_ground = 1;
+                    }
+                }
+            }
         }
 
         if (is_ground) {
