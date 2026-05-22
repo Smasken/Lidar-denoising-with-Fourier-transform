@@ -8,6 +8,22 @@
 #include <ctype.h>
 
 #include "lidar.h"
+
+/* Per-frame timing (milliseconds for each pipeline stage). */
+typedef struct {
+    double ms_projection;
+    double ms_filtering;
+    double ms_normals;
+    double ms_segmentation;
+    double ms_discontinuity;
+    double ms_total;        /* wall time of full frame, excluding file I/O */
+} FrameTiming;
+
+static double elapsed_ms(struct timespec a, struct timespec b)
+{
+    return (b.tv_sec - a.tv_sec) * 1000.0
+         + (b.tv_nsec - a.tv_nsec) / 1.0e6;
+}
 #include "image.h"
 #include "diffusion.h"
 #include "fft.h"
@@ -29,41 +45,67 @@ static int ensure_dir(const char* path)
 
 // Process a single .bin input and save range, normals, discontinuity images
 // If h_threshold >= 0, also save a ground segmentation overlay using that height threshold.
-static void process_and_save(const char* infile, int idx, const char* outdir, float h_threshold)
+static FrameTiming process_and_save(const char* infile, int idx, const char* outdir, float h_threshold)
 {
+    FrameTiming ft = {0};
+    struct timespec t0, t1, frame_start, frame_end;
+
     LidarData* scan = load_lidar_data(infile);
     if (!scan) {
         fprintf(stderr, "Failed to load %s\n", infile);
-        return;
+        return ft;
     }
 
+    /* ---- projection ---- */
+    clock_gettime(CLOCK_MONOTONIC, &frame_start);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     Image* range_img = lidar_to_range_image(scan, 1024, 64);
-    if (!range_img) {
-        free_lidar_data(scan);
-        return;
-    }
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    ft.ms_projection = elapsed_ms(t0, t1);
+    free_lidar_data(scan);
 
+    if (!range_img) return ft;
+
+    /* ---- hole-fill + median filter ---- */
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     fill_holes(range_img, 5);
     median_filter(range_img);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    ft.ms_filtering = elapsed_ms(t0, t1);
+
     char path[1024];
     snprintf(path, sizeof(path), "%s/range_%05d.pgm", outdir, idx);
     save_image_as_pgm(range_img, path);
-    
+
+    /* ---- surface normals ---- */
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     Normal* normals = compute_surface_normals(range_img);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    ft.ms_normals = elapsed_ms(t0, t1);
 
     if (normals) {
         snprintf(path, sizeof(path), "%s/normals_%05d.pgm", outdir, idx);
         save_normal_map_as_pgm(normals, range_img->width, range_img->height, path);
+
+        /* ---- ground segmentation ---- */
         if (h_threshold >= 0.0f) {
             char segpath[1024];
             snprintf(segpath, sizeof(segpath), "%s/ground_%05d.ppm", outdir, idx);
+            clock_gettime(CLOCK_MONOTONIC, &t0);
             // default nz threshold ~0.9 (≈25° from vertical), use provided h_threshold
             save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f, h_threshold);
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            ft.ms_segmentation = elapsed_ms(t0, t1);
         }
         free(normals);
     }
 
+    /* ---- depth discontinuities ---- */
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     Image* disc = compute_depth_discontinuities(range_img, 1.0f);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    ft.ms_discontinuity = elapsed_ms(t0, t1);
+
     if (disc) {
         snprintf(path, sizeof(path), "%s/disc_%05d.pgm", outdir, idx);
         save_discontinuity_as_pgm(disc, path);
@@ -71,49 +113,62 @@ static void process_and_save(const char* infile, int idx, const char* outdir, fl
     }
 
     free_image(range_img);
-    free_lidar_data(scan);
+
+    clock_gettime(CLOCK_MONOTONIC, &frame_end);
+    ft.ms_total = elapsed_ms(frame_start, frame_end);
+    return ft;
 }
 
 // Run the original single-scan experiment pipeline (denoising comparisons)
 static int run_single_experiment(const char* infile)
 {
+    struct timespec t0, t1;
+
     LidarData* scan = load_lidar_data(infile);
     if (!scan) {
         printf("Failed to read LIDAR data\n");
         return 1;
     }
 
-    printf("loaded %d points\n", scan->num_points);
+    printf("Loaded %d points\n", scan->num_points);
 
-    Image* range_img = lidar_to_range_image(scan, 1392, 512);
-    if (!range_img) {
-        free_lidar_data(scan);
-        return 1;
-    }
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    Image* range_img = lidar_to_range_image(scan, 1024, 64);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    free_lidar_data(scan);
+    if (!range_img) return 1;
+    printf("Projection:    %6.2f ms\n", elapsed_ms(t0, t1));
 
     printf("Created range image: %d x %d\n", range_img->width, range_img->height);
 
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     fill_holes(range_img, 5);
     median_filter(range_img);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("Filtering:     %6.2f ms\n", elapsed_ms(t0, t1));
     save_image_as_pgm(range_img, "range_img.pgm");
+
     printf("\n--- Running experiment ---\n");
 
-    // Also save normals and discontinuity for this scan
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     Normal* normals = compute_surface_normals(range_img);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("Normals:       %6.2f ms\n", elapsed_ms(t0, t1));
     if (normals) {
         save_normal_map_as_pgm(normals, range_img->width, range_img->height, "normals.pgm");
         free(normals);
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     Image* disc = compute_depth_discontinuities(range_img, 1.0f);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("Discontinuity: %6.2f ms\n", elapsed_ms(t0, t1));
     if (disc) {
         save_discontinuity_as_pgm(disc, "discontinuity.pgm");
         free_image(disc);
     }
 
-    // Cleanup
     free_image(range_img);
-    free_lidar_data(scan);
-
     return 0;
 }
 
@@ -196,6 +251,11 @@ int main(int argc, char** argv)
             return 1;
         }
 
+        double total_ms = 0.0;
+        double total_proj = 0.0, total_filt = 0.0, total_norm = 0.0;
+        double total_seg  = 0.0, total_disc = 0.0;
+        int frames_timed = 0;
+
         struct dirent* entry;
         int idx = 0;
         // collect .bin names
@@ -233,16 +293,41 @@ int main(int argc, char** argv)
             snprintf(fullpath, sizeof(fullpath), "%s/%s", input_dir, names[i]);
             printf("Processing %s (%zu/%zu)\n", names[i], i+1, names_len);
             float h_threshold = create_ground_video ? 0.5f : -1.0f; // 0.5 m default when enabled
-            process_and_save(fullpath, idx, images_out_dir, h_threshold);
-            // also create segmentation frame (ground overlay)
-            // process_and_save already computes normals and frees them; reopen quick compute here
-            // To avoid duplicate computation, modify process_and_save to save segmentation as well.
+            FrameTiming ft = process_and_save(fullpath, idx, images_out_dir, h_threshold);
+            if (ft.ms_total > 0.0) {
+                total_ms   += ft.ms_total;
+                total_proj += ft.ms_projection;
+                total_filt += ft.ms_filtering;
+                total_norm += ft.ms_normals;
+                total_seg  += ft.ms_segmentation;
+                total_disc += ft.ms_discontinuity;
+                frames_timed++;
+            }
             idx++;
             free(names[i]);
         }
         free(names);
 
         printf("Batch processing complete.\n");
+
+        if (frames_timed > 0) {
+            double avg_ms   = total_ms   / frames_timed;
+            double avg_proj = total_proj / frames_timed;
+            double avg_filt = total_filt / frames_timed;
+            double avg_norm = total_norm / frames_timed;
+            double avg_seg  = total_seg  / frames_timed;
+            double avg_disc = total_disc / frames_timed;
+            double compute_ms = avg_proj + avg_filt + avg_norm + avg_seg + avg_disc;
+            printf("\n--- Timing summary (%d frames) ---\n", frames_timed);
+            printf("  Projection:    %6.2f ms\n", avg_proj);
+            printf("  Filtering:     %6.2f ms\n", avg_filt);
+            printf("  Normals:       %6.2f ms\n", avg_norm);
+            printf("  Segmentation:  %6.2f ms\n", avg_seg);
+            printf("  Discontinuity: %6.2f ms\n", avg_disc);
+            printf("  --------------------------------\n");
+            printf("  Compute total: %6.2f ms  (%.1f Hz)\n", compute_ms, 1000.0 / compute_ms);
+            printf("  Wall total:    %6.2f ms  (%.1f Hz, includes file I/O)\n", avg_ms, 1000.0 / avg_ms);
+        }
 
         char cmd[2048];
         if (create_range_video) {
