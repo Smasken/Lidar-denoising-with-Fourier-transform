@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <float.h>
+#include <omp.h>
 #include "image.h"
 #include "lidar.h"
 
@@ -41,12 +42,9 @@ Image* lidar_to_range_image(LidarData* lidar, int width, int height) {
     float min_elev = -24.9f;
     float max_elev = 2.0f;
 
-    // Approximate beam elevations (HDL-64E has 64 beams roughly equally spaced)
-    float beam_elev[64];
-    float step = (max_elev - min_elev) / 63.0f;
-    for (int i = 0; i < 64; i++) {
-        beam_elev[i] = min_elev + i * step;
-    }
+    // Beam elevations: HDL-64E has 64 beams uniformly spaced across [min_elev, max_elev].
+    // Instead of searching all 64 beams per point, compute the nearest row directly.
+    float beam_step = (max_elev - min_elev) / (float)(height - 1);
 
     for (int i = 0; i < lidar->num_points; i++) {
         Point p = lidar->points[i];
@@ -63,16 +61,10 @@ Image* lidar_to_range_image(LidarData* lidar, int width, int height) {
         // Map to pixel coordinates
         int x = (int)(azimuth / 360.0f * width) % width;
 
-        // Find the closest beam elevation
-        int y = 0;
-        float min_diff = fabsf(elevation - beam_elev[0]);
-        for (int j = 1; j < height; j++) {
-            float diff = fabsf(elevation - beam_elev[j]);
-            if (diff < min_diff) {
-                min_diff = diff;
-                y = j;
-            }
-        }
+        // Map elevation directly to row index via closed-form rounding (O(1) vs O(height))
+        int y = (int)roundf((elevation - min_elev) / beam_step);
+        if (y < 0) y = 0;
+        if (y >= height) y = height - 1;
 
         // Flip vertical mapping so that the top row corresponds to the highest elevation.
         // The beam array was built from MIN_ELEV..MAX_ELEV, so y==0 is MIN_ELEV (lowest).
@@ -137,6 +129,21 @@ int save_image_as_pgm(Image* img, const char* filename) {
     return 1;
 }
 
+void image_range(Image* img, float* out_min, float* out_max)
+{
+    float mn = FLT_MAX, mx = -FLT_MAX;
+    int n = img->width * img->height;
+    for (int i = 0; i < n; i++) {
+        float v = img->data[i];
+        if (v >= 0.0f) {
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        }
+    }
+    *out_min = mn;
+    *out_max = mx;
+}
+
 void fill_holes(Image* img, int iterations)
 {
     int w = img->width;
@@ -149,6 +156,7 @@ void fill_holes(Image* img, int iterations)
 
         memcpy(temp, img->data, sizeof(float) * w * h);
 
+        #pragma omp parallel for collapse(2) schedule(static)
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
 
@@ -207,6 +215,7 @@ void median_filter(Image* img)
 
     memcpy(temp, img->data, sizeof(float) * w * h);
 
+    #pragma omp parallel for collapse(2) schedule(static)
     for (int y = 1; y < h - 1; y++) {
         for (int x = 1; x < w - 1; x++) {
 

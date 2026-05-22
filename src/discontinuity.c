@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
+#include <omp.h>
 #include "../headers/discontinuity.h"
 
 Image* compute_depth_discontinuities(Image* range_img, float threshold)
@@ -15,6 +16,7 @@ Image* compute_depth_discontinuities(Image* range_img, float threshold)
     // Initialize to -1 for invalid
     for (int i = 0; i < w * h; i++) out->data[i] = -1.0f;
 
+    #pragma omp parallel for collapse(2) schedule(static)
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             int idx = y * w + x;

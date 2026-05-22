@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <float.h>
 #include <math.h>
 #include "../headers/segmentation.h"
 
@@ -18,23 +17,15 @@ static int reconstruct_pz(int x, int y, int width, int height, float range, floa
     return 1;
 }
 
-int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold, float h_threshold)
+int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height,
+                                const char* filename, float nz_threshold, float h_threshold,
+                                float min_range, float max_range)
 {
     if (!range_img || !filename) return 0;
 
     FILE* f = fopen(filename, "wb");
     if (!f) return 0;
 
-    // Determine range min/max as in save_image_as_pgm
-    float min_range = FLT_MAX;
-    float max_range = -FLT_MAX;
-    for (int i = 0; i < width * height; i++) {
-        float val = range_img->data[i];
-        if (val >= 0) {
-            if (val < min_range) min_range = val;
-            if (val > max_range) max_range = val;
-        }
-    }
     float range_span = max_range - min_range;
     if (range_span == 0.0f) range_span = 1.0f;
 

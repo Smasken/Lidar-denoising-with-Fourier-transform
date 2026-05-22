@@ -9,6 +9,10 @@
 // Writes a binary PPM (P6). Returns 1 on success.
 // `nz_threshold` : minimum Z component of normal to be considered upward-facing
 // `h_threshold`  : maximum allowed height (pz) to be considered ground (meters)
-int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height, const char* filename, float nz_threshold, float h_threshold);
+// min_range / max_range should be pre-computed with image_range() to avoid a
+// redundant full scan of the range image (save_image_as_pgm already does one).
+int save_ground_overlay_as_ppm(Normal* normals, Image* range_img, int width, int height,
+                                const char* filename, float nz_threshold, float h_threshold,
+                                float min_range, float max_range);
 
 #endif

@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <omp.h>
 
 #include "lidar.h"
 
@@ -73,6 +74,10 @@ static FrameTiming process_and_save(const char* infile, int idx, const char* out
     clock_gettime(CLOCK_MONOTONIC, &t1);
     ft.ms_filtering = elapsed_ms(t0, t1);
 
+    /* Compute min/max once here; reused by both save calls below. */
+    float rmin, rmax;
+    image_range(range_img, &rmin, &rmax);
+
     char path[1024];
     snprintf(path, sizeof(path), "%s/range_%05d.pgm", outdir, idx);
     save_image_as_pgm(range_img, path);
@@ -93,7 +98,7 @@ static FrameTiming process_and_save(const char* infile, int idx, const char* out
             snprintf(segpath, sizeof(segpath), "%s/ground_%05d.ppm", outdir, idx);
             clock_gettime(CLOCK_MONOTONIC, &t0);
             // default nz threshold ~0.9 (≈25° from vertical), use provided h_threshold
-            save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f, h_threshold);
+            save_ground_overlay_as_ppm(normals, range_img, range_img->width, range_img->height, segpath, 0.9f, h_threshold, rmin, rmax);
             clock_gettime(CLOCK_MONOTONIC, &t1);
             ft.ms_segmentation = elapsed_ms(t0, t1);
         }
@@ -174,6 +179,20 @@ static int run_single_experiment(const char* infile)
 
 int main(int argc, char** argv)
 {
+    // Scan for optional -t <N> flag anywhere in argv to set the OpenMP thread count.
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "-t") == 0) {
+            int n = atoi(argv[i + 1]);
+            if (n > 0) {
+                omp_set_num_threads(n);
+                printf("Using %d OpenMP thread(s).\n", n);
+            } else {
+                fprintf(stderr, "Warning: invalid thread count '%s', using default.\n", argv[i + 1]);
+            }
+            break;
+        }
+    }
+
     // If user provides a directory, run batch mode. If user provides a .bin file, run single experiment.
     if (argc == 1) {
         // default single-file as before

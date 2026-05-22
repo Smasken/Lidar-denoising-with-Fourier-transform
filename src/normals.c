@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
+#include <omp.h>
 #include "../headers/normals.h"
 
 // Based on Schreck and Reichert: Height Change Feature Based Free Space Detection (2023)
@@ -67,6 +68,7 @@ Normal* compute_surface_normals(Image* range_img)
     // For robustness, allow searching up to 2 pixels for valid neighbors
     const int MAX_OFFSET = 2;
 
+    #pragma omp parallel for collapse(2) schedule(static)
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             int idx = y * w + x;
