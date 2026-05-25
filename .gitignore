@@ -12,3 +12,5 @@ data/
 denoise
 
 *.mp4
+
+.DS_Store
