@@ -180,6 +180,8 @@ static int run_single_experiment(const char* infile)
 int main(int argc, char** argv)
 {
     // Scan for optional -t <N> flag anywhere in argv to set the OpenMP thread count.
+    // Strip -t and its value from argv afterwards so the positional parser below
+    // sees a clean argument list (the y/n flags are detected by counting from the end).
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "-t") == 0) {
             int n = atoi(argv[i + 1]);
@@ -189,6 +191,10 @@ int main(int argc, char** argv)
             } else {
                 fprintf(stderr, "Warning: invalid thread count '%s', using default.\n", argv[i + 1]);
             }
+            // Remove -t and its value so downstream parsing is unaffected
+            for (int j = i; j < argc - 2; j++)
+                argv[j] = argv[j + 2];
+            argc -= 2;
             break;
         }
     }
@@ -204,8 +210,8 @@ int main(int argc, char** argv)
     struct stat st;
     if (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) {
         const char* input_dir = argv[1];
-        const char* images_out_dir = "output_images";
-        const char* videos_out_dir = "output_videos";
+        const char* images_out_dir = "data/output_images";
+        const char* videos_out_dir = "data/output_videos";
 
         // Parse optional flags: support either last-4 flags (r n d g) or last-3 (r n d)
         int create_range_video = 0, create_normals_video = 0, create_disc_video = 0, create_ground_video = 0;
