@@ -39,7 +39,7 @@ Per-stage timing is printed to stdout.
 Pass a directory containing `.bin` files:
 
 ```bash
-./denoise <input_dir> [images_dir] [videos_dir] [R] [N] [D] [G]
+./denoise <input_dir> [images_dir] [videos_dir] [R] [N] [G]
 ```
 
 | Argument | Default | Description |
@@ -47,20 +47,18 @@ Pass a directory containing `.bin` files:
 | `input_dir` | — | Directory of `.bin` LiDAR scans (required) |
 | `images_dir` | `data/output_images` | Where per-frame PGM/PPM images are written |
 | `videos_dir` | `data/output_videos` | Where compiled MP4 videos are written |
-| `R` | `n` | `y` / `n` — create range video |
-| `N` | `n` | `y` / `n` — create normals video |
-| `D` | `n` | `y` / `n` — create discontinuity video |
-| `G` | `n` | `y` / `n` — create ground-segmentation video |
+| `R` | `n` | `y` / `n` — compile range images into a video |
+| `N` | `n` | `y` / `n` — compile normals images into a video |
+| `G` | `n` | `y` / `n` — compile ground-segmentation images into a video |
 
-The four `y`/`n` flags must appear together at the end of the argument list.
+The three `y`/`n` flags must appear together at the end of the argument list.
 Omitting them disables all video creation (images are still written).
 Video creation requires `ffmpeg` to be installed.
 
-Per-frame images are always written regardless of the video flags:
+The full pipeline always runs for every frame. Per-frame images written unconditionally:
 - `range_NNNNN.pgm`
 - `normals_NNNNN.pgm`
-- `disc_NNNNN.pgm`
-- `ground_NNNNN.ppm` (only when `G y` is set)
+- `ground_NNNNN.ppm`
 
 A timing summary (ms per stage, average Hz) is printed after the batch
 completes.
@@ -86,10 +84,10 @@ If omitted, OpenMP uses its default (typically one thread per logical core).
 ./denoise data/2011_09_26/velodyne_points/data -t 8 n n n n
 
 # Batch — write all images and all videos
-./denoise data/2011_09_26/velodyne_points/data y y y y
+./denoise data/2011_09_26/velodyne_points/data y y y
 
 # Batch — custom output dirs, ground segmentation video only
-./denoise data/2011_09_26/velodyne_points/data my_imgs my_vids n n n y
+./denoise data/2011_09_26/velodyne_points/data my_imgs my_vids n n y
 ```
 
 ## Ground segmentation parameters

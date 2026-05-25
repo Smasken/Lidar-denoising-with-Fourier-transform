@@ -16,7 +16,6 @@ typedef struct {
     double ms_filtering;
     double ms_normals;
     double ms_segmentation;
-    double ms_discontinuity;
     double ms_total;        /* wall time of full frame, excluding file I/O */
 } FrameTiming;
 
@@ -31,7 +30,6 @@ static double elapsed_ms(struct timespec a, struct timespec b)
 #include "metrics.h"
 #include "noise.h"
 #include "normals.h"
-#include "discontinuity.h"
 #include "segmentation.h"
 
 // Ensure a directory exists (create if missing)
@@ -44,8 +42,7 @@ static int ensure_dir(const char* path)
     return 1;
 }
 
-// Process a single .bin input and save range, normals, discontinuity images
-// If h_threshold >= 0, also save a ground segmentation overlay using that height threshold.
+// Process a single .bin input and save range image, surface normal map, and ground segmentation overlay.
 static FrameTiming process_and_save(const char* infile, int idx, const char* outdir, float h_threshold)
 {
     FrameTiming ft = {0};
@@ -105,18 +102,6 @@ static FrameTiming process_and_save(const char* infile, int idx, const char* out
         free(normals);
     }
 
-    /* ---- depth discontinuities ---- */
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    Image* disc = compute_depth_discontinuities(range_img, 1.0f);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    ft.ms_discontinuity = elapsed_ms(t0, t1);
-
-    if (disc) {
-        snprintf(path, sizeof(path), "%s/disc_%05d.pgm", outdir, idx);
-        save_discontinuity_as_pgm(disc, path);
-        free_image(disc);
-    }
-
     free_image(range_img);
 
     clock_gettime(CLOCK_MONOTONIC, &frame_end);
@@ -164,15 +149,6 @@ static int run_single_experiment(const char* infile)
         free(normals);
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    Image* disc = compute_depth_discontinuities(range_img, 1.0f);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    printf("Discontinuity: %6.2f ms\n", elapsed_ms(t0, t1));
-    if (disc) {
-        save_discontinuity_as_pgm(disc, "discontinuity.pgm");
-        free_image(disc);
-    }
-
     free_image(range_img);
     return 0;
 }
@@ -213,41 +189,21 @@ int main(int argc, char** argv)
         const char* images_out_dir = "data/output_images";
         const char* videos_out_dir = "data/output_videos";
 
-        // Parse optional flags: support either last-4 flags (r n d g) or last-3 (r n d)
-        int create_range_video = 0, create_normals_video = 0, create_disc_video = 0, create_ground_video = 0;
+        // Parse optional flags: last 3 single-char y/n arguments are [R] [N] [G]
+        // (range video, normals video, ground segmentation video).
+        int create_range_video = 0, create_normals_video = 0, create_ground_video = 0;
         int flags_present = 0;
 
-        if (argc >= 5) {
-            int flags_start = argc - 4; // index of first possible flag (4 flags)
-            if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1 && (int)strlen(argv[flags_start+3]) == 1) {
-                char a = tolower((unsigned char)argv[flags_start][0]);
-                char b = tolower((unsigned char)argv[flags_start+1][0]);
-                char c = tolower((unsigned char)argv[flags_start+2][0]);
-                char d = tolower((unsigned char)argv[flags_start+3][0]);
-                if ((a == 'y' || a == 'n') && (b == 'y' || b == 'n') && (c == 'y' || c == 'n') && (d == 'y' || d == 'n')) {
-                    create_range_video = (a == 'y');
-                    create_normals_video = (b == 'y');
-                    create_disc_video = (c == 'y');
-                    create_ground_video = (d == 'y');
-                    flags_present = 1;
-                    if (flags_start > 2) images_out_dir = argv[2];
-                    if (flags_start > 3) videos_out_dir = argv[3];
-                }
-            }
-        }
-
-        // Fallback: check for 3-flag form (no ground flag)
-        if (!flags_present && argc >= 4) {
-            int flags_start = argc - 3; // index of first possible flag (3 flags)
+        if (argc >= 4) {
+            int flags_start = argc - 3;
             if ((int)strlen(argv[flags_start]) == 1 && (int)strlen(argv[flags_start+1]) == 1 && (int)strlen(argv[flags_start+2]) == 1) {
                 char a = tolower((unsigned char)argv[flags_start][0]);
                 char b = tolower((unsigned char)argv[flags_start+1][0]);
                 char c = tolower((unsigned char)argv[flags_start+2][0]);
                 if ((a == 'y' || a == 'n') && (b == 'y' || b == 'n') && (c == 'y' || c == 'n')) {
-                    create_range_video = (a == 'y');
+                    create_range_video   = (a == 'y');
                     create_normals_video = (b == 'y');
-                    create_disc_video = (c == 'y');
-                    create_ground_video = 0;
+                    create_ground_video  = (c == 'y');
                     flags_present = 1;
                     if (flags_start > 2) images_out_dir = argv[2];
                     if (flags_start > 3) videos_out_dir = argv[3];
@@ -277,8 +233,7 @@ int main(int argc, char** argv)
         }
 
         double total_ms = 0.0;
-        double total_proj = 0.0, total_filt = 0.0, total_norm = 0.0;
-        double total_seg  = 0.0, total_disc = 0.0;
+        double total_proj = 0.0, total_filt = 0.0, total_norm = 0.0, total_seg = 0.0;
         int frames_timed = 0;
 
         struct dirent* entry;
@@ -317,15 +272,14 @@ int main(int argc, char** argv)
             char fullpath[2048];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", input_dir, names[i]);
             printf("Processing %s (%zu/%zu)\n", names[i], i+1, names_len);
-            float h_threshold = create_ground_video ? 0.5f : -1.0f; // 0.5 m default when enabled
-            FrameTiming ft = process_and_save(fullpath, idx, images_out_dir, h_threshold);
+            // Always run the full pipeline; the y/n flags only control video creation.
+            FrameTiming ft = process_and_save(fullpath, idx, images_out_dir, 0.5f);
             if (ft.ms_total > 0.0) {
                 total_ms   += ft.ms_total;
                 total_proj += ft.ms_projection;
                 total_filt += ft.ms_filtering;
                 total_norm += ft.ms_normals;
                 total_seg  += ft.ms_segmentation;
-                total_disc += ft.ms_discontinuity;
                 frames_timed++;
             }
             idx++;
@@ -341,14 +295,12 @@ int main(int argc, char** argv)
             double avg_filt = total_filt / frames_timed;
             double avg_norm = total_norm / frames_timed;
             double avg_seg  = total_seg  / frames_timed;
-            double avg_disc = total_disc / frames_timed;
-            double compute_ms = avg_proj + avg_filt + avg_norm + avg_seg + avg_disc;
+            double compute_ms = avg_proj + avg_filt + avg_norm + avg_seg;
             printf("\n--- Timing summary (%d frames) ---\n", frames_timed);
             printf("  Projection:    %6.2f ms\n", avg_proj);
             printf("  Filtering:     %6.2f ms\n", avg_filt);
             printf("  Normals:       %6.2f ms\n", avg_norm);
             printf("  Segmentation:  %6.2f ms\n", avg_seg);
-            printf("  Discontinuity: %6.2f ms\n", avg_disc);
             printf("  --------------------------------\n");
             printf("  Compute total: %6.2f ms  (%.1f Hz)\n", compute_ms, 1000.0 / compute_ms);
             printf("  Wall total:    %6.2f ms  (%.1f Hz, includes file I/O)\n", avg_ms, 1000.0 / avg_ms);
@@ -369,14 +321,6 @@ int main(int argc, char** argv)
             system(cmd);
         } else {
             printf("To create normals video run:\nffmpeg -y -framerate 10 -i %s/normals_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/normals_video.mp4\n", images_out_dir, videos_out_dir);
-        }
-
-        if (create_disc_video) {
-            snprintf(cmd, sizeof(cmd), "ffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4", images_out_dir, videos_out_dir);
-            printf("Creating discontinuity video: %s\n", cmd);
-            system(cmd);
-        } else {
-            printf("To create discontinuity video run:\nffmpeg -y -framerate 10 -i %s/disc_%%05d.pgm -c:v libx264 -pix_fmt yuv420p %s/disc_video.mp4\n", images_out_dir, videos_out_dir);
         }
 
         // Ground segmentation video
